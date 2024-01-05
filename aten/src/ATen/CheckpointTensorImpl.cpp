@@ -249,14 +249,9 @@ CheckpointPool::CheckpointPool() { }
 namespace native {
 
 
-/// TODO: 引入张量t有undefined的情况，此种情况cpti构造出来的tensor却不是undefined的了
 Tensor checkpoint(const Tensor& t) {
   STATS.track("checkpoint");
-  // if(!t.defined())
-  //   return Tensor(nullptr);
-  // auto cpti = intrusive_ptr<CheckpointTensorImpl>::make(t);   // 调用了Ref<intrusive_ptr<External>> External CheckpointTensorCell的相关构造函数
   auto cpti = c10::make_intrusive<CheckpointTensorImpl>(t);      // cpti->ref->value->value->t 是包裹的unique_ptr<Tensor>
-  // auto res = detail::make_tensor<CheckpointTensorImpl>(cpti);    // 这种做法会导致impl成了父类对象，没有cpti的信息了
   if (use_log_) {
     DTRLogConstant(cpti->counter_name());
     DTRLogMemory(cpti->counter_name(), cpti->ref->value->value->memory());
