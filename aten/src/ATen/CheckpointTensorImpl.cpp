@@ -12,7 +12,7 @@
 #define MINIMAL_EVICT                    /// 最小驱逐策略（贪心+随机 DTR）
 // #define MINIMAL_EVICT_COST                /// 最小驱逐策略+cost cache（贪心+随机 DTR）
 
-#define MULTI_MODE
+// #define MULTI_MODE
 
 #ifdef TIME_REC
 auto start_time = std::chrono::high_resolution_clock::now();
@@ -141,9 +141,10 @@ long cost_time_ = 0;
 bool use_log_ = false;
 bool use_profile_ = false;
 #ifdef DEBUG_MODE
-bool record_er_counts = false;
+bool record_er_counts = true;
 bool record_mem_addr = false;
 bool record_op_recs = false;
+bool record_fragmentation = false;
 
 
 std::atomic<size_t> evict_counts = 0;
@@ -218,9 +219,24 @@ namespace dtb {
   class DTBCheckpointPool{
     private:
       std::vector<std::unique_ptr<CheckpointPool>> device_dtbpool;
+
+      std::vector<size_t> peak_allocated_memory;
+      std::vector<size_t> peak_reserved_memory;
+
+      void update_max_meminfo(int device_id){
+        peak_allocated_memory[device_id] = std::max(peak_allocated_memory[device_id], current_memory(device_id));
+        peak_reserved_memory[device_id] = std::max(peak_reserved_memory[device_id], reserved_memory(device_id));
+      }
+
       bool device_id_check(int device_id){
         return device_id >= 0;
       }
+
+      inline void init_check(){
+        if(!initialized())
+          throw std::runtime_error("DTB manager is not initialized.");
+      }
+      
 
     public:
 
@@ -228,8 +244,12 @@ namespace dtb {
         const auto size = static_cast<int64_t>(device_dtbpool.size());
         if (size < device_count) {
           device_dtbpool.resize(device_count);
+          peak_allocated_memory.resize(device_count);
+          peak_reserved_memory.resize(device_count);
           for (const auto i : c10::irange(size, device_count)) {
             device_dtbpool[i] = std::make_unique<CheckpointPool>();
+            peak_allocated_memory[i] = 0;
+            peak_reserved_memory[i] = 0;
           }
         }
       }
@@ -240,6 +260,10 @@ namespace dtb {
 
       void auto_evict(int device) {
         if(!device_id_check(device)) return;
+        init_check();
+      #ifdef DEBUG_MODE
+        update_max_meminfo(device);
+      #endif
         auto pool = device_dtbpool[device].get();
         if (pool->has_memory_budget) {
       #ifdef DEBUG_MODE
@@ -260,6 +284,7 @@ namespace dtb {
 
       void auto_evict(int device, size_t coming_bytes) {
         if(!device_id_check(device)) return;
+        init_check();
         auto pool = device_dtbpool[device].get();
         if (pool->has_memory_budget) {
       #ifdef DEBUG_MODE
@@ -280,13 +305,17 @@ namespace dtb {
 
       void force_evict(int device, int mode) {
         if(!device_id_check(device)) return;
+        init_check();
         auto pool = device_dtbpool[device].get();
         pool->force_evict(mode);
       }
 
       inline void add_ap(int device, const intrusive_ptr<AliasPool>& new_ap){
         if(!device_id_check(device)) return;
-        // if(likely(device>=0)){
+        init_check();
+      #ifdef DEBUG_MODE
+        update_max_meminfo(device);
+      #endif
         auto pool = device_dtbpool[device].get();
         pool->add(new_ap);
         // }else if(device==-1){
@@ -300,6 +329,10 @@ namespace dtb {
 
       inline void add_ext(int device, const weak_intrusive_ptr<External>& new_ext) {
         if(!device_id_check(device)) return;
+        init_check();
+      #ifdef DEBUG_MODE
+        update_max_meminfo(device);
+      #endif
         // if(likely(device>=0)){
         auto pool = device_dtbpool[device].get();
         pool->exts.push_back(new_ext);
@@ -352,6 +385,13 @@ namespace dtb {
         }
       }
 
+      std::vector<std::pair<size_t, size_t>> get_peak_memory(){
+        std::vector<std::pair<size_t, size_t>> res;
+        for (int i = 0; i<device_dtbpool.size(); i++) {
+            res.push_back({peak_allocated_memory[i], peak_reserved_memory[i]});
+        }
+        return res;
+      }
   };
 
   DTBCheckpointPool dtb_pool;
@@ -646,7 +686,7 @@ void CheckpointPool::initiative_evict(size_t to_free_bytes){
 }
 
 void CheckpointPool::evict() {
-#ifdef DEBUG_MODE
+#ifdef ORIGINAL_DTR
   time_t pre = std::chrono::system_clock::now();
 #endif
   STATS.track("CheckpointPool::evict");
@@ -704,7 +744,7 @@ void CheckpointPool::evict() {
 #ifdef DEBUG_MODE
     if(record_er_counts){
       evict_counts += 1;
-      DTRLogEvictAPSEvents(evict_counts);
+      // DTRLogEvictAPSEvents(evict_counts);
     }
 #endif
     auto evict_from_idx = [&](size_t idx) {
@@ -715,7 +755,7 @@ void CheckpointPool::evict() {
                           };
     evict_from_idx(evict_idx);
   }
-#ifdef DEBUG_MODE
+#ifdef ORIGINAL_DTR
   time_t post = std::chrono::system_clock::now();
   search_time_ += (post - pre).count();
 #endif
@@ -857,16 +897,12 @@ namespace native {
 
 /// !TODO: 潜在问题 引入张量t有undefined的情况，此种情况cpti构造出来的tensor却不是undefined的了，可以额外标记tensor是undefined
 /// 需要规避空tensor带来的可能问题，调用empty tensor的成员方法会报错
-Tensor checkpoint(const Tensor& t) {
+Tensor checkpoint(const Tensor& t, bool if_weight) {
   STATS.track("checkpoint");
-#ifdef MULTI_MODE
-  lazyInitDTB();
-#endif
   // if(!t.defined())
   //   return Tensor(nullptr);
   // auto cpti = intrusive_ptr<CheckpointTensorImpl>::make(t);   // 调用了Ref<intrusive_ptr<External>> External CheckpointTensorCell的相关构造函数
   auto cpti = c10::make_intrusive<CheckpointTensorImpl>(t);      // cpti->ref->value->value->t 是包裹的unique_ptr<Tensor> unsafeGetTensorCell()
-  // auto res = detail::make_tensor<CheckpointTensorImpl>(cpti);    // 这种做法会导致impl成了父类对象，没有cpti的信息了
 #ifdef DEBUG_MODE
   if (use_log_) {
     DTRLogConstant(cpti->counter_name());
@@ -908,7 +944,7 @@ bool is_checkpoint(const Tensor& t) {
 
 Tensor try_checkpoint(const Tensor& t) {
   STATS.track("try_checkpiont");
-  if(t.key_set().has(DispatchKey::Checkpoint)&&!is_checkpoint(t)){
+  if(t.key_set().has(DispatchKey::Checkpoint)&&!is_checkpoint(t)){   /// 这行代码不一定有用 但debug验证的代价较大
     // t.key_set() = t.key_set().remove(DispatchKey::Checkpoint);    // 返回值是keyset，但没有set函数 所以是没有用的
     annotate_log("trigger");
     return(checkpoint(t.decheckpoint()));
@@ -937,7 +973,7 @@ void toggle_log(bool b) {
   use_log_ = b;
 }
 
-void clear_checkpointpool() {
+void clear_checkpointpool(long device) {
 #ifdef MULTI_MODE
   auto *pm = getDTBPoolManager();
   pm->clear_checkpointpool();
@@ -948,6 +984,12 @@ void clear_checkpointpool() {
     }
     pool.exts.pop_back();
   }
+#endif
+}
+
+void init_dtb_manager(){
+#ifdef MULTI_MODE
+  lazyInitDTB();
 #endif
 }
 
@@ -962,7 +1004,6 @@ void unset_memory_budget() {
 
 void set_memory_budget(long budget) {
 #ifdef MULTI_MODE
-  lazyInitDTB();
   auto *pm = getDTBPoolManager();
   pm->set_memory_budget(budget);
 #else
@@ -999,6 +1040,24 @@ void force_evict(long mode){
 
 void log_dtr_statics(){
 #ifdef DEBUG_MODE
+#ifdef MULTI_MODE
+  if(record_fragmentation){
+    auto *pm = getDTBPoolManager();
+    int did = 0;
+    for(const auto& mem_info: pm->get_peak_memory()){
+      std::stringstream log_str;
+      log_str << "device-" << did << " peak allocated memory";
+      DTRLogCounts(log_str.str(), mem_info.first);
+      log_str.clear();
+      log_str << "device-" << did << " peak reserved memory";
+      DTRLogCounts(log_str.str(), mem_info.second);
+      log_str.clear();
+      log_str << "device-" << did << " fragmentation ratio";
+      DTRLogCounts(log_str.str(), static_cast<double>(mem_info.first) / static_cast<double>(mem_info.second));
+      did++;
+    }
+  }
+#endif
   if(record_er_counts){
     DTRLogCounts("evict counts", evict_counts);
     DTRLogCounts("evict tensor counts", tensor_evict_counts);
@@ -1102,7 +1161,7 @@ void AliasPool::evict(int mode) { // 0 - evict | 1 - destruct
         if(mode==0)
         {
           tensor_evict_counts += 1;
-          DTRLogEvictEvents(cell->counter_name(), tensor_evict_counts);
+          // DTRLogEvictEvents(cell->counter_name(), tensor_evict_counts);
         }
         else
           tensor_destruct_counts += 1;
@@ -1129,7 +1188,7 @@ void AliasPool::release_external() {
 }
 
 double AliasPool::cost(time_t current_time) {
-#ifdef DEBUG_MODE
+#ifdef ORIGINAL_DTR
   time_t pre = std::chrono::system_clock::now();
 #endif
   auto cpi = head_remat->get_cpi();
@@ -1138,7 +1197,7 @@ double AliasPool::cost(time_t current_time) {
     cpi = merge_cpi(cpi, get_t(necn));
   }
   auto ret = cpi.cost(memory, (current_time - last_used_time).count());
-#ifdef DEBUG_MODE
+#ifdef ORIGINAL_DTR
   time_t post = std::chrono::system_clock::now();
   cost_time_ += (post - pre).count();
 #endif
@@ -1205,7 +1264,7 @@ Tensors uncheckpoint(const strongs& inputs) {
   Tensors ret;
   ret.reserve(inputs.size());
   for (const strong& input : inputs) {
-    // inlined manually
+    // TAG: Remat entry
     ret.push_back(input->get());
   }
   return ret;
@@ -1234,7 +1293,7 @@ void Rematerializer::remat() {
     s->pool->lock();
   }
   Tensors ts = uncheckpoint(inputs);
-#ifdef DEBUG_MODE
+#ifdef ORIGINAL_DTR
   time_t pre = std::chrono::system_clock::now();
 #endif
 
@@ -1257,7 +1316,7 @@ void Rematerializer::remat() {
   #endif
 #endif
 
-#ifdef DEBUG_MODE
+#ifdef ORIGINAL_DTR
   time_t post = std::chrono::system_clock::now();
   remat_compute_time_ += (post - pre).count();
 #endif
@@ -1265,7 +1324,9 @@ void Rematerializer::remat() {
   for (size_t i = 0; i < outputs.size(); ++i) {
     if (auto output_cell = outputs[i].lock()) {
       output_cell->fill(ret[i]);
+#ifndef ORIGINAL_DTR
       output_cell->pool->lock_remated();
+#endif
     }
   }
   ecn.reset();
@@ -1319,14 +1380,14 @@ Tensor CheckpointTensorCell::get(){
   if (!t) {
       TORCH_CHECK(remat);
 #ifdef DEBUG_MODE
-      if(record_er_counts)
-        DTRLogRematEvents(counter_name(), 0);
+      // if(record_er_counts)
+      //   DTRLogRematEvents(counter_name(), 0);
 #endif
       remat->remat();
     }
     defined = true;
     TORCH_CHECK(t);
-    TORCH_CHECK(! t->key_set().has(DispatchKey::CheckpointTensorId));
+    TORCH_CHECK(!t->key_set().has(DispatchKey::CheckpointTensorId));
     pool->last_used_time = std::chrono::system_clock::now();
     return *t;
 }
@@ -1514,8 +1575,8 @@ MakeRawResult make_raw(const rematerialize_function_t& remat_f,
   pool.auto_evict();
 #endif
 
-#ifdef DEBUG_MODE
-  // base_compute_time_ += (post - pre).count();       // if sync?
+#ifdef ORIGINAL_DTR
+  base_compute_time_ += (post - pre).count();       // if sync?
   // c10::cuda::device_synchronize();
 #endif
   std::vector<intrusive_ptr<External>> outputs;
@@ -1850,7 +1911,9 @@ void CheckpointTensorImpl::mutate(const std::string& name,
 #endif
 
   const auto& modified = ret.outputs;
-  for (size_t idx: mutate_idx) {
+  for (size_t idx: mutate_idx) {                              /// 存在inputs中不为cpti的tensor，但受限于语法无法直接修改
+    // if(C10_UNLIKELY(!native::is_checkpoint(inputs[idx])))
+    //   inputs[idx] = native::checkpoint(inputs[idx]);
     cell_from_tensor(inputs[idx])->value = modified[idx];
   }
 #ifdef DEBUG_MODE
