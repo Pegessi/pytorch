@@ -41,8 +41,8 @@
 #define MINIMAL_EVICT                    /// 最小驱逐策略（贪心+随机 DTR）
 // #define MINIMAL_EVICT_COST            /// 最小驱逐策略+cost cache（贪心+随机 DTR） op记录
 #define DEGREE_CHAIN                     /// 残差链发现策略
-#define MEM_FIRST_EVICT                  /// 以内存为中心的驱逐策略(unified_evict)
-// #define ORIG_EVICT                       /// DTR original Evction
+// #define MEM_FIRST_EVICT                  /// 以内存为中心的驱逐策略(unified_evict)
+#define ORIG_EVICT                       /// DTR original Evction
 // 集群上的cost_evict也使用了single_pool + pre_eviction的优化
 
 /**
@@ -64,7 +64,7 @@ static const int RESIDUAL_DEGREE = ([]() -> int {    /// 残差链度设置  4-L
 static const bool COST_FIRST_EVICT = ([]() -> bool {
     const char* env = getenv("COST_FIRST_EVICT");
     if(env) return (atoi(env))==1;
-    else    return false;
+    else    return true;
 })();
 
 static const bool UNIFIED_EVICT = !COST_FIRST_EVICT;

@@ -39,10 +39,10 @@
 TORCH_SDT_DEFINE_SEMAPHORE(malloc)
 TORCH_SDT_DEFINE_SEMAPHORE(free)
 
-#define MEM_TWIN_REC
+// #define MEM_TWIN_REC
 // #define MEM_TWIN_DEBUG
 
-// #define GMLAKE_ENABLE // GMLAKE history trace is unavailable(wrong history)
+#define GMLAKE_ENABLE // GMLAKE history trace is unavailable(wrong history)
 #ifdef GMLAKE_ENABLE
 #include <c10/util/Backtrace.h>
 #include <unordered_map>
@@ -77,8 +77,8 @@ static const std::string mem_log_prefix = ([]() -> std::string {
     else    return ".";
 })();
 
-// static const bool COST_FIRST_EVICT = ([]() -> bool {
-//     const char* env = getenv("COST_FIRST_EVICT");
+// static const bool  = ([]() -> bool {
+//     const char* env = getenv("");
 //     if(env) return (atoi(env))==1;
 //     else    return false;
 // })();
@@ -2315,6 +2315,7 @@ class DeviceCachingAllocator {
     AllocParams params(device, size, stream, &pool, alloc_size, stats);
     params.stat_types = get_stat_types_for_pool(pool);
     // if(c10::dtb::USE_DTR&&(getStats().active_bytes[device].current + size) > c10::dtb::memory_budget){
+  #ifndef ORIG_EVICT
     if(c10::dtb::USE_DTR){
       if(COST_FIRST_EVICT){
         auto *pm = c10::dtb::getDTBPoolManager();
@@ -2322,7 +2323,6 @@ class DeviceCachingAllocator {
       }else{  // UNIFIED_EVICT
         auto if_evict = segManager.auto_evict(size, device, stream);
       }
-
       // if(UNIFIED_EVICT){
       //   auto if_evict = segManager.auto_evict(size, device, stream);
       // }
@@ -2349,6 +2349,7 @@ class DeviceCachingAllocator {
       // }
       #endif
     }
+  #endif
 // #ifdef GMLAKE_ENABLE
 //     params.stat_types[static_cast<size_t>(StatType::AGGREGATE)] = true;
 //     params.stat_types[static_cast<size_t>(get_stat_type_for_pool(pool))] = true;
