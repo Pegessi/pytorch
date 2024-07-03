@@ -35,14 +35,16 @@
 #define likely(x)      __builtin_expect(!!(x), 1)
 #define unlikely(x)    __builtin_expect(!!(x), 0)
 
-// #define ORIGINAL_DTR
-#define DEBUG_MODE
+#define ORIGINAL_DTR
+// #define DEBUG_MODE
 
 #define MINIMAL_EVICT                    /// 最小驱逐策略（贪心+随机 DTR）
 // #define MINIMAL_EVICT_COST            /// 最小驱逐策略+cost cache（贪心+随机 DTR） op记录
 #define DEGREE_CHAIN                     /// 残差链发现策略
 #define MEM_FIRST_EVICT                  /// 以内存为中心的驱逐策略(unified_evict)
 // #define ORIG_EVICT                       /// DTR original Evction
+
+#define DTE_EVICT
 // 集群上的cost_evict也使用了single_pool + pre_eviction的优化
 
 /**
@@ -67,7 +69,11 @@ static const bool COST_FIRST_EVICT = ([]() -> bool {
     else    return false;
 })();
 
+#ifdef DTE_EVICT
+static const bool UNIFIED_EVICT = true;
+#else
 static const bool UNIFIED_EVICT = !COST_FIRST_EVICT;
+#endif
 
 constexpr const int dep_threshold = 50;             /// 重物化链深度阈值
 constexpr const int threshold_touch_counts = 0;     /// 累积触发次数

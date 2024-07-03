@@ -53,7 +53,11 @@ struct CheckpointTensorCell : intrusive_ptr_target {
   intrusive_ptr<Rematerializer> remat;
   void evict();
 
+#ifdef ORIGINAL_DTR
+  void fill(const Tensor& t);
+#else
   void fill(Tensor& t);
+#endif
 
   explicit CheckpointTensorCell(Tensor& t, const intrusive_ptr<AliasPool>& pool);
 

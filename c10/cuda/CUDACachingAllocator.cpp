@@ -77,11 +77,6 @@ static const std::string mem_log_prefix = ([]() -> std::string {
     else    return ".";
 })();
 
-// static const bool COST_FIRST_EVICT = ([]() -> bool {
-//     const char* env = getenv("COST_FIRST_EVICT");
-//     if(env) return (atoi(env))==1;
-//     else    return false;
-// })();
 
 
 struct DTRLogger {
@@ -1358,6 +1353,94 @@ public:
 
   }
 
+
+  bool auto_dte_evict(int device, cudaStream_t stream) {
+    auto *pm = c10::dtb::getDTBPoolManager();
+    auto& aps = pm->get_ap(device);
+    std::random_device rd;
+    std::mt19937 gen = std::mt19937(rd());
+
+    auto get_neighbor_sum_mem = [&](c10::intrusive_ptr<c10::dtb::AliasPool>& sap) -> size_t {
+      for(auto size_it=size_map.lower_bound(sap->memory); size_it!=size_map.end(); size_it++) {
+        for(auto &seg: size_it->second) {
+          for(const auto& bit: seg->blocks) {
+            auto ptr = bit->ptr;
+            void* sap_ptr = reinterpret_cast<void*>(sap->addr);
+            if(ptr == sap_ptr) {
+              size_t pre_mem = bit->prev ? bit->prev->size : 0;
+              size_t next_mem = bit->next ? bit->next->size : 0;
+              if(bit->prev){
+                if(bit->prev->allocated) pre_mem = 0;
+              }
+              if(bit->next){
+                if(bit->next->allocated) next_mem = 0;
+              }
+              return bit->size + pre_mem + next_mem;
+            }
+          }
+        }
+      }
+      return sap->memory;
+    };
+
+    while((c10::dtb::current_memory(device)) > c10::dtb::memory_budget) {
+      bool shrunk = false;
+      int evict_idx = -1;
+      double evict_cost = INFINITY;
+      time_t current_time = std::chrono::system_clock::now();
+
+      auto remove_from_aps = [&](size_t i) {
+                              aps[i] = aps[aps.size() - 1];
+                              aps.pop_back();
+                            };
+      std::uniform_int_distribution<> distrib(1, 1 * std::max(1, static_cast<int>(std::sqrt(aps.size()))));
+      // sampling a random independent subset of all evictable tensors to find the cheapest tensor to evict.
+      // 搜索策略，穷举搜索aps
+      for (size_t i = 0; i < aps.size();) {
+        auto cannot_evict = [&]() {
+                              shrunk = true;
+                              remove_from_aps(i);
+                            };
+        auto ap_strong = aps[i].lock();
+        if (!ap_strong.defined()) {       // check weak_intrusive_ptr if valid
+          cannot_evict();
+        }
+        else if (ap_strong->ecn) {
+          cannot_evict();
+        }
+        else {
+          if (ap_strong->evictable()) {
+            auto mem = get_neighbor_sum_mem(ap_strong);
+            double cost = ap_strong->cost_dte(current_time, mem);
+            if (cost < evict_cost) {
+              evict_cost = cost;
+              evict_idx = i;
+            }
+          }
+          i += distrib(gen);
+        }
+      }
+      // 执行驱逐
+      if (evict_idx == -1) {
+        return false;
+      } else {
+        auto evict_from_idx = [&](size_t idx) {
+                                auto ap_strong = aps[idx].lock();
+                                TORCH_CHECK(ap_strong.defined());
+                                ap_strong->evict(0);
+                                remove_from_aps(evict_idx);
+                              };
+        auto ap_strong = aps[evict_idx].lock();
+
+        evict_from_idx(evict_idx);
+      }
+
+    }
+
+    return true;
+  }
+
+
 };
 
 
@@ -2315,44 +2398,15 @@ class DeviceCachingAllocator {
     AllocParams params(device, size, stream, &pool, alloc_size, stats);
     params.stat_types = get_stat_types_for_pool(pool);
     // if(c10::dtb::USE_DTR&&(getStats().active_bytes[device].current + size) > c10::dtb::memory_budget){
-    if(c10::dtb::USE_DTR){
-      if(COST_FIRST_EVICT){
-        auto *pm = c10::dtb::getDTBPoolManager();
-        auto if_evict = pm->auto_evict(device, size);
-      }else{  // UNIFIED_EVICT
-        auto if_evict = segManager.auto_evict(size, device, stream);
-      }
+    // if(c10::dtb::USE_DTR){
+    //   if(COST_FIRST_EVICT){
+    //     auto *pm = c10::dtb::getDTBPoolManager();
+    //     auto if_evict = pm->auto_evict(device, size);
+    //   }else{  // UNIFIED_EVICT
+    //     auto if_evict = segManager.auto_evict(size, device, stream);
+    //   }
 
-      // if(UNIFIED_EVICT){
-      //   auto if_evict = segManager.auto_evict(size, device, stream);
-      // }
-
-
-// #if defined(MEM_TWIN_REC) && defined(MEM_FIRST_EVICT) 
-//       // if((c10::dtb::current_memory(device)+size) > c10::dtb::memory_budget){
-//       auto if_evict = segManager.auto_evict(size, device, stream);
-//         // if(if_evict) 
-//         // {
-//         //   getSegmentTwins();
-//         // }
-//       // }
-// #else
-//       auto *pm = c10::dtb::getDTBPoolManager();
-//       auto if_evict = pm->auto_evict(device, size);
-// #endif
-
-      #ifdef MORE_POOL
-      // if(if_evict){     // for figure, actually exectution will release these free blocks when close to OOM
-      //   // release_blocks(ex1_blocks);
-      //   // release_blocks(ex2_blocks);
-      //   // release_blocks(large_blocks);
-      // }
-      #endif
-    }
-// #ifdef GMLAKE_ENABLE
-//     params.stat_types[static_cast<size_t>(StatType::AGGREGATE)] = true;
-//     params.stat_types[static_cast<size_t>(get_stat_type_for_pool(pool))] = true;
-// #endif
+    // }
 
     // First, try to get a block from the existing pool.
     bool block_found =
@@ -2641,11 +2695,6 @@ class DeviceCachingAllocator {
       bool inserted = pool->blocks.insert(remaining).second;
       TORCH_INTERNAL_ASSERT_DEBUG_ONLY(inserted);
 
-#ifdef GMLAKE_ENABLE
-      // if (context) {
-      //   trimHistoryBefore(remaining, (char*)block->ptr + size);
-      // }
-#endif
 
       if (already_split && !block->expandable_segment_) {
         // An already-split inactive block is being shrunk by size bytes.
@@ -2905,6 +2954,12 @@ class DeviceCachingAllocator {
     });
     if (block->size >= CachingAllocatorConfig::max_split_size())
       update_stat(stats.oversize_allocations, 1);
+
+    if(c10::dtb::USE_DTR){
+      auto if_evict = segManager.auto_dte_evict(device, stream);
+    }
+
+
 
     c10::reportMemoryUsageToProfiler(
         block->ptr,

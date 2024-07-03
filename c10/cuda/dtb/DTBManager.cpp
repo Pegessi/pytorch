@@ -286,6 +286,12 @@ void DTBCheckpointPool::proactive_remat(int device, int remat_depth) {
   }
 }
 
+std::vector<weak_intrusive_ptr<AliasPool>>& DTBCheckpointPool::get_ap(int device) {
+  init_check();
+  auto pool = device_dtbpool[device].get();
+  return pool->aps;
+}
+
 #ifdef MEM_FIRST_EVICT
 /**
  * Update ap's p2ap info.

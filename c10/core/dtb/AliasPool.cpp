@@ -259,6 +259,19 @@ double AliasPool::cost(time_t current_time) {
   return ret;
 }
 
+double AliasPool::cost_dte(time_t current_time, size_t mem) {
+
+  auto cpi = head_remat->get_cpi();
+  auto ecns = neighbor_ecn();
+  for (const auto& necn : ecns) {
+    cpi = merge_cpi(cpi, get_t(necn));
+  }
+
+  auto ret = cpi.cost(mem, (current_time - last_used_time).count());
+
+  return ret;
+}
+
 std::set<ecn_ptr> AliasPool::neighbor_ecn() {
   STATS.track("AliasPool::neighbor_ecn");
   std::set<ecn_ptr> ptr_set;

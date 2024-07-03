@@ -109,6 +109,7 @@ struct AliasPool : intrusive_ptr_target {
   // if it is evicted, then hold the evicted tensor group.
   ecn_ptr ecn;
   double cost(time_t current_time);
+  double cost_dte(time_t current_time, size_t mem);
   void evict(int mode=0);
   int update_dep_task();
   void update_dependency();
