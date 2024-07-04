@@ -42,7 +42,7 @@ TORCH_SDT_DEFINE_SEMAPHORE(free)
 // #define MEM_TWIN_REC
 // #define MEM_TWIN_DEBUG
 
-#define GMLAKE_ENABLE // GMLAKE history trace is unavailable(wrong history)
+// #define GMLAKE_ENABLE // GMLAKE history trace is unavailable(wrong history)
 #ifdef GMLAKE_ENABLE
 #include <c10/util/Backtrace.h>
 #include <unordered_map>
