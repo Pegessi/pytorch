@@ -39,10 +39,10 @@
 TORCH_SDT_DEFINE_SEMAPHORE(malloc)
 TORCH_SDT_DEFINE_SEMAPHORE(free)
 
-#define MEM_TWIN_REC
+// #define MEM_TWIN_REC
 // #define MEM_TWIN_DEBUG
 
-// #define GMLAKE_ENABLE // GMLAKE history trace is unavailable(wrong history)
+#define GMLAKE_ENABLE // GMLAKE history trace is unavailable(wrong history)
 #ifdef GMLAKE_ENABLE
 #include <c10/util/Backtrace.h>
 #include <unordered_map>
@@ -2322,12 +2322,12 @@ class DeviceCachingAllocator {
     params.stat_types = get_stat_types_for_pool(pool);
     // if(c10::dtb::USE_DTR&&(getStats().active_bytes[device].current + size) > c10::dtb::memory_budget){
     if(c10::dtb::USE_DTR){
-      if(COST_FIRST_EVICT){
-        auto *pm = c10::dtb::getDTBPoolManager();
-        auto if_evict = pm->auto_evict(device, size);
-      }else{  // UNIFIED_EVICT
-        auto if_evict = segManager.auto_evict(size, device, stream);
-      }
+      // if(COST_FIRST_EVICT){
+      auto *pm = c10::dtb::getDTBPoolManager();
+      auto if_evict = pm->auto_evict(device, size);
+      // }else{  // UNIFIED_EVICT
+      //   auto if_evict = segManager.auto_evict(size, device, stream);
+      // }
 
       // if(UNIFIED_EVICT){
       //   auto if_evict = segManager.auto_evict(size, device, stream);
