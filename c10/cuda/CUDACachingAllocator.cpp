@@ -1238,7 +1238,7 @@ public:
       gap_flag = true;
       for(auto size_it=size_map.rbegin(); size_it!=size_map.rend(); ++size_it){
         // if(size_it->first>check_scale*need_size) break;   // early stop
-        if(cur_min_cost < stop_threshold) break;
+        // if(cur_min_cost < stop_threshold) break;
         bool all_cannot_evict = true;
         for(auto &seg: size_it->second){
           search_size++;
@@ -1256,7 +1256,7 @@ public:
     } else {
       for(auto size_it=size_map.lower_bound(need_size); size_it!=size_map.end(); size_it++){
         // if(size_it->first>check_scale*need_size) break;   // early stop
-        if(cur_min_cost < stop_threshold) break;
+        // if(cur_min_cost < stop_threshold) break;
         bool all_cannot_evict = true;
         for(auto &seg: size_it->second){
           search_size++;
