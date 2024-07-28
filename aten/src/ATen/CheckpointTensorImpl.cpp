@@ -208,7 +208,7 @@ void clear_checkpointpool(long device, bool last_iter) {
 #endif
 }
 
-void proactive_recovery(long device, long depth) {
+void proactive_recovery(long device, double depth, bool if_comm) {
 #ifdef MULTI_MODE
   auto *pm = getDTBPoolManager();
   pm->proactive_remat(device, depth);
