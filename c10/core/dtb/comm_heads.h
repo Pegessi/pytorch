@@ -76,7 +76,7 @@ constexpr const int max_dep_threshold = 500;
 #define MULTI_MODE                      /// 是否启用多卡管理模式
 
 // #define TIMER_ENABLE                 /// 是否启用计时(debug)
-// #define DEPTH_ENABLE                 /// 记录每次重物化所累计恢复的张量个数
+#define DEPTH_ENABLE                 /// 记录每次重物化所累计恢复的张量个数
 
 #ifdef TIME_REC
 auto start_time = std::chrono::high_resolution_clock::now();

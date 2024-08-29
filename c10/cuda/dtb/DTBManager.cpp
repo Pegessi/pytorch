@@ -53,6 +53,7 @@ void DTBCheckpointPool::auto_evict(int device) {                 /// TAG: multi 
     ///TODO: 更新当前依赖
 #ifdef DEBUG_MODE
     if(record_dependcy&&current_memory(device) > pool->memory_budget){
+      printf("trigger update dep\n");
       for (size_t i = 0; i < pool->aps.size(); i++) {
         auto ap_strong = pool->aps[i].lock();
         if (!ap_strong.defined()||ap_strong->ecn) {
@@ -98,6 +99,7 @@ void DTBCheckpointPool::auto_evict(int device) {                 /// TAG: multi 
     }
     ///TODO: 清空依赖
     if(record_dependcy&&if_eviction){
+      printf("trigger log dep\n");
       time_t current_time = std::chrono::system_clock::now();
       for (size_t i = 0; i < pool->aps.size(); i++) {
         auto ap_strong = pool->aps[i].lock();
@@ -196,6 +198,23 @@ bool DTBCheckpointPool::auto_evict(int device, size_t coming_bytes) {
   auto pool = device_dtbpool[device].get();
   long search_time_ = 0;
   time_t pre = std::chrono::system_clock::now();
+
+
+#ifdef DEBUG_MODE
+  if(record_dependcy&&(current_memory(device) + coming_bytes) > pool->memory_budget){
+    for (size_t i = 0; i < pool->aps.size(); i++) {
+      auto ap_strong = pool->aps[i].lock();
+      if (!ap_strong.defined()||ap_strong->ecn) {
+        continue;
+      } else {
+        if (ap_strong->evictable()) {
+          ap_strong->update_dependency();
+        }
+      }
+    }
+  }
+#endif
+
   if (pool->has_memory_budget&&if_train_mode[device]) {
     int check_counts[8] = {0};
     bool if_eviction = false;
@@ -216,7 +235,7 @@ bool DTBCheckpointPool::auto_evict(int device, size_t coming_bytes) {
         return false;
       }
     }
-    #ifdef DEBUG_MODE
+#ifdef DEBUG_MODE
     if(c10::dtb::trace_evicted_tensor){
       if(if_eviction){
         time_t post = std::chrono::system_clock::now();
@@ -224,7 +243,23 @@ bool DTBCheckpointPool::auto_evict(int device, size_t coming_bytes) {
         printf("single search time:%ld\n", search_time_);
       }
     }
-    #endif
+    if(record_dependcy&&if_eviction){
+      time_t current_time = std::chrono::system_clock::now();
+      for (size_t i = 0; i < pool->aps.size(); i++) {
+        auto ap_strong = pool->aps[i].lock();
+        if (!ap_strong.defined()||ap_strong->ecn) {
+          continue;
+        } else {
+          if (ap_strong->evictable()) {
+            auto dep = ap_strong->get_dependency();
+            // DTRLogCounts("ap dep", dep);
+            DTRLogDepAndCost("ap dep", dep, ap_strong->cost(current_time));
+          }
+        }
+      }
+      DTRLogCounts("once check end", 999);
+    }
+#endif
     return if_eviction;
   }else return false;
 }
