@@ -1205,7 +1205,7 @@ public:
     long search_time_ = 0, search_size = 0;
     size_t before_allocated = c10::dtb::current_memory(device);
     time_t pre = std::chrono::system_clock::now();
-    size_t gap_size = c10::dtb::memory_budget - before_allocated;
+    size_t gap_size = c10::dtb::memory_budget - before_allocated; // 30G 35G 1MB   5G
     size_t low_cost_size = 0;
     bool gap_flag = false;
     Block* evict_strat = nullptr;
@@ -1234,7 +1234,8 @@ public:
      * 
     */
     double cur_min_cost = 1e5;
-    if(gap_size > need_size*100) {
+    // ① gap_size，超出的很大  ②没超need_size，gap_size  ③gap_size和need_size都很大
+    if(gap_size > need_size*100) {  // 存在隐患，need_size塞到大的segment里面去了
       gap_flag = true;
       for(auto size_it=size_map.rbegin(); size_it!=size_map.rend(); ++size_it){
         // if(size_it->first>check_scale*need_size) break;   // early stop
@@ -1249,7 +1250,7 @@ public:
             if(seg->max_evict_cost < stop_threshold) low_cost_size += seg->can_free_size;
           }
           // if(cur_min_cost < stop_threshold && low_cost_size > gap_size) 
-          if(low_cost_size > gap_size) 
+          if(low_cost_size > gap_size)
             break;
         }
       }
@@ -1266,7 +1267,7 @@ public:
             cur_min_cost = std::min(cur_min_cost, seg->max_evict_cost);
             if(seg->max_evict_cost < stop_threshold) {
               evict_strat = es;
-              low_cost_size += seg->can_free_size;
+              low_cost_size += seg->can_free_size; // the sum of can_free_size with low cost
             }
           }
           if(low_cost_size > gap_size) 

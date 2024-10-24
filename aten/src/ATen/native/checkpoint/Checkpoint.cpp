@@ -1022,16 +1022,16 @@ Tensor checkpoint_upsample_bilinear2d(at::Tensor const& self, c10::ArrayRef<long
   return CheckpointTensorImpl::make("upsample_bilinear2d", rt, {self})[0];
 }
 
-Tensor& checkpoint_upsample_bilinear2d_out(at::Tensor& out, const at::Tensor& self, c10::ArrayRef<long> output_size, bool align_corners, c10::optional<double> scales_h, c10::optional<double> scales_w) {
-  std::vector<long> output_size_ = output_size.vec();
-  mutate_function_t mt =
-    [=](const Tensors& vec) {
-    Tensor out = vec.at(0);
-    at::upsample_bilinear2d_out(out, vec.at(1), output_size_, align_corners, scales_h, scales_w);
-  };
-  CheckpointTensorImpl::mutate("binary_cross_entropy_out", mt, {out, self}, {0});
-  return out;
-}
+// Tensor& checkpoint_upsample_bilinear2d_out(at::Tensor& out, const at::Tensor& self, c10::ArrayRef<long> output_size, bool align_corners, c10::optional<double> scales_h, c10::optional<double> scales_w) {
+//   std::vector<long> output_size_ = output_size.vec();
+//   mutate_function_t mt =
+//     [=](const Tensors& vec) {
+//     Tensor out = vec.at(0);
+//     at::upsample_bilinear2d_out(out, vec.at(1), output_size_, align_corners, scales_h, scales_w);
+//   };
+//   CheckpointTensorImpl::mutate("binary_cross_entropy_out", mt, {out, self}, {0});
+//   return out;
+// }
 
 Tensor& checkpoint_upsample_bilinear2d_backward_out(at::Tensor& grad_input, const at::Tensor& grad_output, c10::ArrayRef<long> output_size, c10::ArrayRef<long> input_size, bool align_corners, c10::optional<double> scales_h, c10::optional<double> scales_w) {
   std::vector<long> output_size_ = output_size.vec();
@@ -1083,13 +1083,13 @@ Tensor& checkpoint_clamp_min_out(const Tensor& self, const c10::Scalar& min, Ten
   return out;
 }
 
-Tensor checkpoint_binary_cross_entropy_with_logits(const Tensor& input, const Tensor& target, const Tensor& weight, const Tensor& pos_weight, int64_t reduction) {
-  rematerialize_function_t rt =
-    [=](const Tensors& vec) -> Tensors {
-    return {at::binary_cross_entropy_with_logits(vec.at(0), vec.at(1), vec.at(2), vec.at(3), reduction)};
-  };
-  return CheckpointTensorImpl::make("binary_cross_entropy_with_logits", rt, {input, target, weight, pos_weight})[0];
-}
+// Tensor checkpoint_binary_cross_entropy_with_logits(const Tensor& input, const Tensor& target, const Tensor& weight, const Tensor& pos_weight, int64_t reduction) {
+//   rematerialize_function_t rt =
+//     [=](const Tensors& vec) -> Tensors {
+//     return {at::binary_cross_entropy_with_logits(vec.at(0), vec.at(1), vec.at(2), vec.at(3), reduction)};
+//   };
+//   return CheckpointTensorImpl::make("binary_cross_entropy_with_logits", rt, {input, target, weight, pos_weight})[0];
+// }
 
 // Tensor checkpoint_binary_cross_entropy_with_logits_backward(const Tensor& grad, const Tensor& input, const Tensor& target, const Tensor& weight, const Tensor& pos_weight, int64_t reduction) {
 //   rematerialize_function_t rt =
@@ -5929,6 +5929,42 @@ at::Tensor checkpoint_fill(const at::Tensor & self, const at::Tensor & value) {
       return {at::fill(vec.at(0), vec.at(1))};
     };
   return CheckpointTensorImpl::make("aten::fill.Tensor", rt, {self, value})[0];
+}
+
+/// ['aten::upsample_bilinear2d_outf', 'at::Tensor &', 'upsample_bilinear2d_outf', '(const at::Tensor & self, at::IntArrayRef output_size, bool align_corners, c10::optional<double> scales_h, c10::optional<double> scales_w, at::Tensor & out)']
+at::Tensor & checkpoint_upsample_bilinear2d_out(const at::Tensor & self, at::IntArrayRef output_size, bool align_corners, c10::optional<double> scales_h, c10::optional<double> scales_w, at::Tensor & out) {
+  auto output_size_ = output_size.vec();
+  rematerialize_function_t rt =
+    [=](const Tensors& vec) -> Tensors {
+      Tensor out = vec.at(1);
+      return {at::upsample_bilinear2d_outf(vec.at(0), output_size_, align_corners, scales_h, scales_w, out)};
+    };
+  return CheckpointTensorImpl::make("aten::upsample_bilinear2d_outf", rt, {self, out})[0];
+}
+
+/// ['aten::binary_cross_entropy_with_logits', 'at::Tensor', 'binary_cross_entropy_with_logits', '(const at::Tensor & self, const at::Tensor & target, const c10::optional<at::Tensor> & weight={}, const c10::optional<at::Tensor> & pos_weight={}, int64_t reduction=at::Reduction::Mean)']
+at::Tensor checkpoint_binary_cross_entropy_with_logits(const at::Tensor & self, const at::Tensor & target, const c10::optional<at::Tensor> & weight, const c10::optional<at::Tensor> & pos_weight, int64_t reduction) {
+  rematerialize_function_t rt =
+    [=](const Tensors& vec) -> Tensors {
+      return {at::binary_cross_entropy_with_logits(vec.at(0), vec.at(1), vec.at(2), vec.at(3), reduction)};
+    };
+  c10::MaybeOwned<Tensor> weight_maybe_owned = at::borrow_from_optional_tensor(weight);
+  const Tensor& weight_ = *weight_maybe_owned;
+  c10::MaybeOwned<Tensor> pos_weight_maybe_owned = at::borrow_from_optional_tensor(pos_weight);
+  const Tensor& pos_weight_ = *pos_weight_maybe_owned;
+  return CheckpointTensorImpl::make("aten::binary_cross_entropy_with_logits", rt, {self, target, weight_, pos_weight_})[0];
+}
+
+/// ['aten::upsample_bilinear2d_backward_outf', 'at::Tensor &', 'upsample_bilinear2d_backward_outf', '(const at::Tensor & grad_output, at::IntArrayRef output_size, at::IntArrayRef input_size, bool align_corners, c10::optional<double> scales_h, c10::optional<double> scales_w, at::Tensor & grad_input)']
+at::Tensor & checkpoint_upsample_bilinear2d_backward_out(const at::Tensor & grad_output, at::IntArrayRef output_size, at::IntArrayRef input_size, bool align_corners, c10::optional<double> scales_h, c10::optional<double> scales_w, at::Tensor & grad_input) {
+  auto output_size_ = output_size.vec();
+  auto input_size_ = input_size.vec();
+  rematerialize_function_t rt =
+    [=](const Tensors& vec) -> Tensors {
+      Tensor grad_input = vec.at(1);
+      return {at::upsample_bilinear2d_backward_out(grad_input, vec.at(0), output_size_, input_size_, align_corners, scales_h, scales_w)};
+    };
+  return CheckpointTensorImpl::make("aten::upsample_bilinear2d_backward_outf", rt, {grad_output, grad_input})[0];
 }
 
 /// ['aten::fill_.Scalar', 'at::Tensor &', 'fill_', '(at::Tensor & self, const at::Scalar & value)']
