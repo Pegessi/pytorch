@@ -2783,6 +2783,45 @@ void checkpoint_record_stream(Tensor& self, c10::Stream stream){
   self.decheckpoint().record_stream(stream);
 }
 
+/// ['aten::native_group_norm', 'std::tuple<at::Tensor,at::Tensor,at::Tensor>', 'native_group_norm', '(const at::Tensor & input, const c10::optional<at::Tensor> & weight, const c10::optional<at::Tensor> & bias, int64_t N, int64_t C, int64_t HxW, int64_t group, double eps)']
+std::tuple<at::Tensor,at::Tensor,at::Tensor> checkpoint_native_group_norm(const at::Tensor & input, const c10::optional<at::Tensor> & weight, const c10::optional<at::Tensor> & bias, int64_t N, int64_t C, int64_t HxW, int64_t group, double eps) {
+  rematerialize_function_t rt =
+    [=](const Tensors& vec) -> Tensors {
+      auto ret = at::native_group_norm(vec.at(0), vec.at(1), vec.at(2), N, C, HxW, group, eps);
+      return {std::get<0>(ret), std::get<1>(ret), std::get<2>(ret)};
+    };
+  c10::MaybeOwned<Tensor> weight_maybe_owned = at::borrow_from_optional_tensor(weight);
+  const Tensor& weight_ = *weight_maybe_owned;
+  c10::MaybeOwned<Tensor> bias_maybe_owned = at::borrow_from_optional_tensor(bias);
+  const Tensor& bias_ = *bias_maybe_owned;
+  auto ret = CheckpointTensorImpl::make("aten::native_group_norm", rt, {input, weight_, bias_});
+  return {ret[0], ret[1], ret[2]};
+}
+
+/// ['aten::native_group_norm_backward', 'std::tuple<at::Tensor,at::Tensor,at::Tensor>', 'native_group_norm_backward', '(const at::Tensor & grad_out, const at::Tensor & input, const at::Tensor & mean, const at::Tensor & rstd, const c10::optional<at::Tensor> & weight, int64_t N, int64_t C, int64_t HxW, int64_t group, ::std::array<bool,3> output_mask)']
+std::tuple<at::Tensor,at::Tensor,at::Tensor> checkpoint_native_group_norm_backward(const at::Tensor & grad_out, const at::Tensor & input, const at::Tensor & mean, const at::Tensor & rstd, const c10::optional<at::Tensor> & weight, int64_t N, int64_t C, int64_t HxW, int64_t group, ::std::array<bool,3> output_mask) {
+  rematerialize_function_t rt =
+    [=](const Tensors& vec) -> Tensors {
+      auto ret = at::native_group_norm_backward(vec.at(0), vec.at(1), vec.at(2), vec.at(3), vec.at(4), N, C, HxW, group, output_mask);
+      return {std::get<0>(ret), std::get<1>(ret), std::get<2>(ret)};
+    };
+  c10::MaybeOwned<Tensor> weight_maybe_owned = at::borrow_from_optional_tensor(weight);
+  const Tensor& weight_ = *weight_maybe_owned;
+  auto ret = CheckpointTensorImpl::make("aten::native_group_norm_backward", rt, {grad_out, input, mean, rstd, weight_});
+  return {ret[0], ret[1], ret[2]};
+}
+
+/// ['aten::_scaled_dot_product_flash_attention', 'std::tuple<at::Tensor,at::Tensor,at::Tensor,at::Tensor,int64_t,int64_t,at::Tensor,at::Tensor,at::Tensor>', '_scaled_dot_product_flash_attention', '(const at::Tensor & query, const at::Tensor & key, const at::Tensor & value, double dropout_p=0.0, bool is_causal=false, bool return_debug_mask=false, c10::optional<double> scale=c10::nullopt)']
+// std::tuple<at::Tensor,at::Tensor,at::Tensor,at::Tensor,int64_t,int64_t,at::Tensor,at::Tensor,at::Tensor> checkpoint__scaled_dot_product_flash_attention(const at::Tensor & query, const at::Tensor & key, const at::Tensor & value, double dropout_p, bool is_causal, bool return_debug_mask, c10::optional<double> scale) {
+//   rematerialize_function_t rt =
+//     [=](const Tensors& vec) -> Tensors {
+//       auto ret = at::_scaled_dot_product_flash_attention(vec.at(0), vec.at(1), vec.at(2), dropout_p, is_causal, return_debug_mask, scale);
+//       return {std::get<0>(ret), std::get<1>(ret), std::get<2>(ret), std::get<3>(ret), std::get<4>(ret), std::get<5>(ret), std::get<6>(ret)};
+//     };
+//   auto ret = CheckpointTensorImpl::make("aten::_scaled_dot_product_flash_attention", rt, {query, key, value});
+//   return {ret[0], ret[1], ret[2], ret[3], ret[4], ret[5], ret[6]};
+// }
+
 /// ['aten::std', 'at::Tensor', 'std', '(const at::Tensor & self, at::OptionalIntArrayRef dim=c10::nullopt, const c10::optional<at::Scalar> & correction=c10::nullopt, bool keepdim=false)']
 at::Tensor checkpoint_std(const at::Tensor & self, at::OptionalIntArrayRef dim, const c10::optional<at::Scalar> & correction, bool keepdim) {
   c10::IntArrayRef dim_;
